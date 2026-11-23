@@ -111,6 +111,7 @@ if (process.env.NODE_ENV !== 'test') {
       });
       shutdownCoordinator.setServer(server);
       shutdownCoordinator.listen(['SIGTERM', 'SIGINT']);
+      shutdownCoordinator.setRequestTimeoutMs(10_000);
       // Routine audit hash-chain verification + Stellar Merkle-root anchoring
       if (process.env.AUDIT_CHAIN_JOBS_ENABLED === 'true') {
         startAuditChainJobs();

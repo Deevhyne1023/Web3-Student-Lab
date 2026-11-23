@@ -1,4 +1,5 @@
 import { Server } from 'http';
+import type { Socket } from 'net';
 
 interface ShutdownOptions {
   timeout?: number;
@@ -13,8 +14,9 @@ export class ShutdownCoordinator {
   private server?: Server;
   private workers: Array<() => Promise<void>> = [];
   private clients: Array<() => Promise<void>> = [];
-  private sockets = new Set<import('net').Socket>();
+  private sockets = new Set<Socket>();
   private isShuttingDown = false;
+  private closePromise?: Promise<void>;
   private timeout: number;
   private logger: any;
   private exitOnShutdown: boolean;
@@ -28,7 +30,7 @@ export class ShutdownCoordinator {
 
   public setServer(server: Server) {
     this.server = server;
-    server.on('connection', (socket) => {
+    server.on('connection', (socket: Socket) => {
       this.sockets.add(socket);
       socket.on('close', () => this.sockets.delete(socket));
     });
@@ -63,9 +65,16 @@ export class ShutdownCoordinator {
   /**
    * Closes the HTTP server (letting in-flight requests finish, then forcibly
    * ending idle keep-alive sockets), stops workers, and disconnects clients.
-   * Safe to call multiple times; subsequent calls resolve once the first finishes.
+   * Idempotent: concurrent or repeated calls share the same teardown promise.
    */
-  public async closeAllConnections(): Promise<void> {
+  public closeAllConnections(): Promise<void> {
+    if (!this.closePromise) {
+      this.closePromise = this.doCloseAllConnections();
+    }
+    return this.closePromise;
+  }
+
+  private async doCloseAllConnections(): Promise<void> {
     if (this.server && this.server.listening) {
       const server = this.server;
       await new Promise<void>((resolve, reject) => {
